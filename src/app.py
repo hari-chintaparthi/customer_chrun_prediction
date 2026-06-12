@@ -111,8 +111,10 @@ def load_all_models():
         if os.path.exists(path):
             try:
                 models[name] = joblib.load(path)
-            except Exception:
-                pass
+            except Exception as e:
+                st.sidebar.error(f"Failed to load {name}.joblib: {e}")
+        else:
+            st.sidebar.warning(f"Model file not found: models/{name}.joblib")
     return models
 
 # Sidebar Content
