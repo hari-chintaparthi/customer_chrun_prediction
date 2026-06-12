@@ -10,12 +10,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 from datetime import datetime
-
 # Add current dir to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import importlib
 from src import config
-importlib.reload(config)
 
 try:
     from src.train import train_pipeline, MLFLOW_AVAILABLE
