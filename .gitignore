@@ -1,0 +1,50 @@
+# Python gitignore
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/
+manifest.json
+
+# MLflow and Model Artifacts
+mlruns/
+mlflow.db
+models/
+*.joblib
+*.pkl
+*.pkl.z
+
+# Data
+data/*.csv
+!data/creditcard_subset.csv
+*.csv
