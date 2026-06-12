@@ -148,6 +148,9 @@ def load_eda_data():
     if os.path.exists(config.ORIGINAL_DATASET_PATH):
         # Read a subset to keep app fast
         return pd.read_csv(config.ORIGINAL_DATASET_PATH)
+    elif os.path.exists(config.SUBSET_DATASET_PATH):
+        # Fallback to subset for EDA in cloud deployments
+        return pd.read_csv(config.SUBSET_DATASET_PATH)
     return None
 
 df_data = load_eda_data()
@@ -175,6 +178,8 @@ with tab_overview:
     if df_data is None:
         st.warning(f"Original dataset not found at `{config.ORIGINAL_DATASET_PATH}`. Please check path or verify dataset exists.")
     else:
+        if not os.path.exists(config.ORIGINAL_DATASET_PATH):
+            st.info("💡 **Platform Running in Cloud Mode**: Utilizing the pre-packaged sample dataset (`creditcard_subset.csv`) for visualizations.")
         # Key Dataset Stats
         total_records = len(df_data)
         churn_records = df_data[config.TARGET].sum()
