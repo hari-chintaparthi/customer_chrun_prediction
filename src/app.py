@@ -1,4 +1,6 @@
 import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import sys
 import joblib
 import pandas as pd
@@ -14,7 +16,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import importlib
 from src import config
 importlib.reload(config)
-from src.train import train_pipeline
+
+try:
+    from src.train import train_pipeline, MLFLOW_AVAILABLE
+except Exception as e:
+    train_pipeline = None
+    MLFLOW_AVAILABLE = False
 
 # Page Configuration
 st.set_page_config(
@@ -540,8 +547,16 @@ with tab_mlflow:
     st.subheader("MLflow Experiment Tracking & Training Orchestrator")
     
     # MLflow Setup Status
-    import mlflow
-    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+    if MLFLOW_AVAILABLE:
+        try:
+            import mlflow
+            mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+        except Exception as e:
+            MLFLOW_AVAILABLE = False
+            
+    if not MLFLOW_AVAILABLE:
+        st.warning("⚠️ **MLflow Experiment Tracking is currently offline or unavailable** (e.g., due to package conflicts on Streamlit Cloud Python 3.14).")
+        st.info("The application has gracefully bypassed MLflow. Single predictions, batch predictions, and data visualizations are fully functional using the pre-trained champion model. You can still trigger local retraining below, but runs will not be logged to MLflow.")
     
     col_t1, col_t2 = st.columns([2, 3])
     
@@ -552,20 +567,24 @@ with tab_mlflow:
         1. Load dataset from file system
         2. Apply SMOTE to training split
         3. Train Logistic Regression, Random Forest, LightGBM, and XGBoost
-        4. Log hyperparameters, F1, Recall, and ROC-AUC in MLflow
+        4. Log hyperparameters, F1, Recall, and ROC-AUC in MLflow (if available)
         5. Save XGBoost as champion model
         """)
         
         # Check if local dataset exists
         dataset_exists = os.path.exists(config.ORIGINAL_DATASET_PATH)
+        can_train = dataset_exists and train_pipeline is not None
+        
         if not dataset_exists:
             st.error(f"Dataset NOT found at `{config.ORIGINAL_DATASET_PATH}`. Training cannot be triggered.")
+        elif train_pipeline is None:
+            st.error("Training module is unavailable.")
         else:
             st.success("Creditcard.csv dataset verified. Ready to train.")
             
-        retrain_btn = st.button("🚀 Trigger Model Re-training Pipeline", disabled=not dataset_exists)
+        retrain_btn = st.button("🚀 Trigger Model Re-training Pipeline", disabled=not can_train)
         
-        if retrain_btn:
+        if retrain_btn and train_pipeline is not None:
             log_area = st.empty()
             progress_bar = st.progress(0)
             
@@ -607,83 +626,86 @@ with tab_mlflow:
     with col_t2:
         st.markdown("##### 🔬 MLflow Run Logs (Experiment: Customer_Churn_Prediction)")
         
-        # Load run history from MLflow local mlruns
-        try:
-            runs_df = mlflow.search_runs(experiment_names=["Customer_Churn_Prediction"])
-            if runs_df is not None and not runs_df.empty:
-                # Format runs dataframe
-                runs_display = runs_df.copy()
-                if "tags.mlflow.runName" in runs_display.columns:
-                    runs_display["run_name"] = runs_display["tags.mlflow.runName"]
-                
-                # Keep important columns
-                keep_cols = [
-                    "run_name", 
-                    "status", 
-                    "metrics.recall", 
-                    "metrics.f1_score", 
-                    "metrics.roc_auc", 
-                    "start_time"
-                ]
-                
-                # Verify columns exist
-                keep_cols = [c for c in keep_cols if c in runs_display.columns]
-                runs_display = runs_display[keep_cols]
-                
-                # Rename columns for presentation
-                rename_map = {
-                    "run_name": "Model / Run Name",
-                    "status": "Status",
-                    "metrics.recall": "Recall",
-                    "metrics.f1_score": "F1-Score",
-                    "metrics.roc_auc": "ROC-AUC",
-                    "start_time": "Date Run"
-                }
-                runs_display = runs_display.rename(columns=rename_map)
-                
-                # Sort by Date Run descending
-                if "Date Run" in runs_display.columns:
-                    runs_display = runs_display.sort_values(by="Date Run", ascending=False)
-                    # Convert date format
-                    runs_display["Date Run"] = pd.to_datetime(runs_display["Date Run"]).dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                st.dataframe(
-                    runs_display.style.format({
-                        "Recall": "{:.4f}",
-                        "F1-Score": "{:.4f}",
-                        "ROC-AUC": "{:.4f}"
-                    }),
-                    width="stretch"
-                )
-                
-                # Compare models Chart
-                st.markdown("##### 📊 Model Performance Comparison")
-                # Group by Model Name and get average metrics
-                runs_grouped = runs_display.groupby("Model / Run Name")[["Recall", "F1-Score", "ROC-AUC"]].mean().reset_index()
-                
-                # Plotly grouped bar chart
-                fig_comp = go.Figure()
-                for metric in ["Recall", "F1-Score", "ROC-AUC"]:
-                    fig_comp.add_trace(go.Bar(
-                        x=runs_grouped["Model / Run Name"],
-                        y=runs_grouped[metric],
-                        name=metric,
-                        text=[f"{v:.3f}" for v in runs_grouped[metric]],
-                        textposition='auto'
-                    ))
-                
-                fig_comp.update_layout(
-                    barmode='group',
-                    template="plotly_dark",
-                    height=350,
-                    margin=dict(l=20, r=20, t=30, b=20),
-                    yaxis=dict(range=[0, 1.05])
-                )
-                st.plotly_chart(fig_comp, width="stretch")
-                
-            else:
-                st.info("No runs found in local MLflow repository. Trigger the model re-training pipeline to register runs.")
-        except Exception as e:
-            st.info("No run logs available yet. Please execute the training pipeline to generate run history.")
+        if not MLFLOW_AVAILABLE:
+            st.info("Run history and comparisons are not available because MLflow is disabled in this environment.")
+        else:
+            # Load run history from MLflow local mlruns
+            try:
+                runs_df = mlflow.search_runs(experiment_names=["Customer_Churn_Prediction"])
+                if runs_df is not None and not runs_df.empty:
+                    # Format runs dataframe
+                    runs_display = runs_df.copy()
+                    if "tags.mlflow.runName" in runs_display.columns:
+                        runs_display["run_name"] = runs_display["tags.mlflow.runName"]
+                    
+                    # Keep important columns
+                    keep_cols = [
+                        "run_name", 
+                        "status", 
+                        "metrics.recall", 
+                        "metrics.f1_score", 
+                        "metrics.roc_auc", 
+                        "start_time"
+                    ]
+                    
+                    # Verify columns exist
+                    keep_cols = [c for c in keep_cols if c in runs_display.columns]
+                    runs_display = runs_display[keep_cols]
+                    
+                    # Rename columns for presentation
+                    rename_map = {
+                        "run_name": "Model / Run Name",
+                        "status": "Status",
+                        "metrics.recall": "Recall",
+                        "metrics.f1_score": "F1-Score",
+                        "metrics.roc_auc": "ROC-AUC",
+                        "start_time": "Date Run"
+                    }
+                    runs_display = runs_display.rename(columns=rename_map)
+                    
+                    # Sort by Date Run descending
+                    if "Date Run" in runs_display.columns:
+                        runs_display = runs_display.sort_values(by="Date Run", ascending=False)
+                        # Convert date format
+                        runs_display["Date Run"] = pd.to_datetime(runs_display["Date Run"]).dt.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    st.dataframe(
+                        runs_display.style.format({
+                            "Recall": "{:.4f}",
+                            "F1-Score": "{:.4f}",
+                            "ROC-AUC": "{:.4f}"
+                        }),
+                        width="stretch"
+                    )
+                    
+                    # Compare models Chart
+                    st.markdown("##### 📊 Model Performance Comparison")
+                    # Group by Model Name and get average metrics
+                    runs_grouped = runs_display.groupby("Model / Run Name")[["Recall", "F1-Score", "ROC-AUC"]].mean().reset_index()
+                    
+                    # Plotly grouped bar chart
+                    fig_comp = go.Figure()
+                    for metric in ["Recall", "F1-Score", "ROC-AUC"]:
+                        fig_comp.add_trace(go.Bar(
+                            x=runs_grouped["Model / Run Name"],
+                            y=runs_grouped[metric],
+                            name=metric,
+                            text=[f"{v:.3f}" for v in runs_grouped[metric]],
+                            textposition='auto'
+                        ))
+                    
+                    fig_comp.update_layout(
+                        barmode='group',
+                        template="plotly_dark",
+                        height=350,
+                        margin=dict(l=20, r=20, t=30, b=20),
+                        yaxis=dict(range=[0, 1.05])
+                    )
+                    st.plotly_chart(fig_comp, width="stretch")
+                    
+                else:
+                    st.info("No runs found in local MLflow repository. Trigger the model re-training pipeline to register runs.")
+            except Exception as e:
+                st.info("No run logs available yet. Please execute the training pipeline to generate run history.")
             # Debug detail
             # st.error(str(e))
