@@ -39,10 +39,6 @@ manifest.json
 # MLflow and Model Artifacts
 mlruns/
 mlflow.db
-models/
-*.joblib
-*.pkl
-*.pkl.z
 
 # Data
 data/*.csv
